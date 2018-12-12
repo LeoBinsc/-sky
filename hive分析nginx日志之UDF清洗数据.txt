@@ -1,0 +1,103 @@
+接着来看：
+1、首先编写UDF，如下：
+--使用String类型的replaceAll（）函数：
+
+package net.dbking.hadoop.chavin_hive;
+import org.apache.hadoop.hive.ql.exec.UDF;
+import org.apache.hadoop.io.Text;
+public class RemoveQuotesUDF extends UDF{
+     
+     public Text evaluate(Text str){
+         if(null == str.toString()){
+             return new Text();
+         }
+         return new Text (str.toString().replaceAll("\"", ""));
+     }
+}
+
+2、去除“[]”的UDF：
+
+package net.dbking.hadoop.chavin_hive;
+import org.apache.hadoop.hive.ql.exec.UDF;
+import org.apache.hadoop.io.Text;
+public class RemoveBracketUDF extends UDF{
+     
+     public Text evaluate(Text str){
+         if(null == str.toString()){
+             return new Text();
+         }
+     
+         return new Text (str.toString().substring(1,str.toString().length()-1));
+         
+     }
+     
+}
+
+3、时间日志格式化UDF:
+
+package net.dbking.hadoop.chavin_hive;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import org.apache.hadoop.hive.ql.exec.UDF;
+import org.apache.hadoop.io.Text;
+public class DataTransformUDF extends UDF{
+     
+     private final SimpleDateFormat inputFormat = new SimpleDateFormat("dd/MMM/yyyy:HH:mm:ss", Locale.ENGLISH);
+     private final SimpleDateFormat outputFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+     
+     public Text evaluate(Text input){
+         
+         Text output = new Text();
+         
+         if(null == input){
+             return null;
+         }
+         
+         String inputDate = input.toString().trim();
+         
+         if(null == inputDate){
+             return null;
+         }
+         
+         try{
+             Date parseDate = inputFormat.parse(inputDate);
+             
+             String outputDate = outputFormat.format(parseDate);
+             
+             output.set(outputDate);
+             
+         }catch(Exception e){
+             
+             e.printStackTrace();
+             
+             return output;
+         }
+         
+         return output;
+         
+     }
+     
+}
+4、编写插入数据hive脚本：
+add jar /opt/cloudera/parcels/CDH/lib/hive/lib/hive-contrib-1.1.0-cdh5.9.2.jar;
+add jar /opt/cloudera/jars/RemoveQuotesUDF.jar;
+add jar /opt/cloudera/jars/RemoveBracketUDF.jar;
+add jar /opt/cloudera/jars/DateTransformUDF.jar;
+create temporary function my_removequote as "net.dbking.hadoop.chavin_hive.RemoveQuotesUDF";
+create temporary function my_removebracket as "net.dbking.hadoop.chavin_hive.RemoveBracketUDF";
+create temporary function my_datetransform as "net.dbking.hadoop.chavin_hive.DateTransformUDF";
+insert overwrite table chavin.nginx_access_log_comm 
+select my_removequote(host),
+my_datetransform(my_removebracket(time)),
+my_removequote(request),
+my_removequote(referer)
+from chavin.nginx_access_log;
+测试插入数据：
+select * from chavin.nginx_access_log_comm limit 5;
+ 
+场景1：分析哪个时间段，网站访问量最大：
+select substring(time,12,2) hour,count(1) cnt
+from chavin.nginx_access_log_comm
+group by substring(time,12,2)
+order by cnt desc;
